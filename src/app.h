@@ -4,6 +4,18 @@
 #include "vk_mem_alloc.h"
 
 
+constexpr unsigned int FRAME_OVERLAP = 2;
+struct FrameResources {
+
+	// Synchronisation primitives for frame submission.
+	VkSemaphore mImageAvailableSemaphore;
+	VkSemaphore mRenderFinishedSemaphore;
+	VkFence		mRenderFence;
+
+	VkCommandPool mCommandPool;
+	VkCommandBuffer mMainCommandBuffer;
+};
+
 
 class VulkanApp {
 public:
@@ -15,10 +27,13 @@ public:
 	struct GLFWwindow*	mWindow{ nullptr }; // Forward declaration.
 	VkExtent2D			mWindowExtents{ 1024, 768 };
 
-	// Swapchain stuff.
-	VkSwapchainKHR	mSwapchain;
-	VkFormat		mSwapchainImageFormat;
+	int mFrameNumber{ 0 };
+	FrameResources mFrames[FRAME_OVERLAP];
+	FrameResources& getCurrentFrame() { return mFrames[mFrameNumber % FRAME_OVERLAP]; };
 
+	// Swapchain stuff.
+	VkSwapchainKHR				mSwapchain;
+	VkFormat					mSwapchainImageFormat;
 	std::vector<VkImage>		mSwapchainImages;
 	std::vector<VkImageView>	mSwapchainImageViews;
 	VkExtent2D					mSwapchainExtent;
@@ -26,6 +41,7 @@ public:
 
 	void init();
 	void initSwapchain();
+	void initFrameResources();
 	void initAllocators();
 
 

@@ -6,7 +6,9 @@
 
 #include <GLFW/glfw3.h>
 
+#include <vk_initializers.h>
 #include "vk_types.h"
+
 
 #include <VkBootstrap.h>
 
@@ -43,8 +45,7 @@ void VulkanApp::init()
 
     initContext(validation);
     initSwapchain();
-
-
+    initFrameResources();
 }
 
 void VulkanApp::initContext(bool validation)
@@ -182,6 +183,36 @@ void VulkanApp::initSwapchain()
     createSwapchain(mWindowExtents.width, mWindowExtents.height);
 }
 
+void VulkanApp::initFrameResources()
+{
+    //create a command pool for commands submitted to the graphics queue.
+    //we also want the pool to allow for resetting of individual command buffers
+    VkCommandPoolCreateInfo commandPoolInfo = commandPoolCreateInfo(mGraphicsQueueFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+
+    for (int i = 0; i < FRAME_OVERLAP; i++) {
+        ///
+        /// Create command pool for each frame
+        /// 
+        VK_CHECK(vkCreateCommandPool(mDevice, &commandPoolInfo, nullptr, &mFrames[i].mCommandPool));
+        
+
+        ///
+        /// Allocate a command buffer per frame for frame submission.
+        /// 
+        VkCommandBufferAllocateInfo cmdAllocInfo = commandBufferAllocateInfo(mFrames[i].mCommandPool, 1);
+        VK_CHECK(vkAllocateCommandBuffers(mDevice, &cmdAllocInfo, &mFrames[i].mMainCommandBuffer));
+
+        ///
+        /// Create sync primitives needed for frame submission.
+        /// 
+        VkSemaphoreCreateInfo semCreateInfo = semaphoreCreateInfo(0);
+        VK_CHECK(vkCreateSemaphore(mDevice, &semCreateInfo, nullptr, &mFrames[i].mImageAvailableSemaphore));
+        VK_CHECK(vkCreateSemaphore(mDevice, &semCreateInfo, nullptr, &mFrames[i].mRenderFinishedSemaphore));
+        VkFenceCreateInfo fncCreateInfo = fenceCreateInfo(VK_FENCE_CREATE_SIGNALED_BIT);
+        VK_CHECK(vkCreateFence(mDevice, &fncCreateInfo, nullptr, &mFrames[i].mRenderFence));
+    }
+}
+
 void VulkanApp::initAllocators()
 {
     // Create a single-use command pool.
@@ -196,26 +227,6 @@ void VulkanApp::initAllocators()
 }
 
 
-VkFenceCreateInfo fenceCreateInfo(VkFenceCreateFlags flags = 0)
-{
-    VkFenceCreateInfo info = {};
-    info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    info.pNext = nullptr;
-
-    info.flags = flags;
-
-    return info;
-}
-
-VkSemaphoreCreateInfo semaphoreCreateInfo(VkSemaphoreCreateFlags flags = 0)
-{
-    VkSemaphoreCreateInfo info = {};
-    info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    info.pNext = nullptr;
-    info.flags = flags;
-    return info;
-}
-
 void VulkanApp::draw()
 {
 
@@ -224,54 +235,35 @@ void VulkanApp::draw()
 void VulkanApp::run()
 {
 
-    static int frameNumber = 0;
-
-    VkSemaphoreCreateInfo semCreateInfo = semaphoreCreateInfo(0);
-    VkSemaphore imageAvailableSemaphore;
-    VkSemaphore renderFinishedSemaphore;
-    VK_CHECK(vkCreateSemaphore(mDevice, &semCreateInfo, nullptr, &imageAvailableSemaphore));
-    VK_CHECK(vkCreateSemaphore(mDevice, &semCreateInfo, nullptr, &renderFinishedSemaphore));
-
-    // Create a fence in the signalled state.
-    VkFenceCreateInfo fncCreateInfo = fenceCreateInfo(VK_FENCE_CREATE_SIGNALED_BIT);
-    VkFence fence;
-    VK_CHECK(vkCreateFence(mDevice, &fncCreateInfo, nullptr, &fence));
-
-
     // Main loop
     while (!glfwWindowShouldClose(mWindow)) {
         glfwPollEvents();
 
         ///
-        /// Wait for the previous frame to finish by waiting on the fence.
+        /// Wait for the other frame to finish by waiting on it's fence.
         /// 
-        VK_CHECK(vkWaitForFences(mDevice, 1, &fence, VK_TRUE, UINT64_MAX));
-        VK_CHECK(vkResetFences(mDevice, 1, &fence));
+        VK_CHECK(vkWaitForFences(mDevice, 1, &getCurrentFrame().mRenderFence, VK_TRUE, UINT64_MAX));
+        VK_CHECK(vkResetFences(mDevice, 1, &getCurrentFrame().mRenderFence));
 
         ///
-        /// Acquire an image from the swap chain
+        /// Acquire an image to render to from the swap chain.
         /// 
         uint32_t imageIndex = 0;
-        vkAcquireNextImageKHR(mDevice, mSwapchain, UINT64_MAX, imageAvailableSemaphore, nullptr, &imageIndex);
+        vkAcquireNextImageKHR(mDevice, mSwapchain, UINT64_MAX, getCurrentFrame().mImageAvailableSemaphore, nullptr, &imageIndex);
 
 
         ///
-        /// Record drawing commands in a command buffer
+        /// Record draw commands in a command buffer
         /// 
-        VkCommandBufferAllocateInfo cmdBufAllocInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
-        cmdBufAllocInfo.commandBufferCount = 1;
-        cmdBufAllocInfo.commandPool = mCommandPool;
-        cmdBufAllocInfo.level = VkCommandBufferLevel::VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        VkCommandBuffer cmd;
-        VK_CHECK(vkAllocateCommandBuffers(mDevice, &cmdBufAllocInfo, &cmd));
+        VkCommandBuffer cmd = getCurrentFrame().mMainCommandBuffer;
+        VK_CHECK(vkResetCommandBuffer(cmd, 0));
 
-        VkCommandBufferBeginInfo cmdBeginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-        cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        VkCommandBufferBeginInfo cmdBeginInfo = commandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
         VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
         {
 
-            VkClearColorValue color = (frameNumber == 0) ? VkClearColorValue{ 1, 0, 1, 1 } : VkClearColorValue{0, 1, 1, 1};
-            frameNumber = (frameNumber + 1) % 2;
+            VkClearColorValue color = (mFrameNumber %2 ==  0) ? VkClearColorValue{ 1, 0, 1, 1 } : VkClearColorValue{0, 1, 1, 1};
+            mFrameNumber += 1;
 
             VkImageSubresourceRange range = {};
             range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -288,31 +280,37 @@ void VulkanApp::run()
         VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO}; 
         VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = &imageAvailableSemaphore;
+        submitInfo.pWaitSemaphores = &getCurrentFrame().mImageAvailableSemaphore;
         submitInfo.pWaitDstStageMask = waitStages;
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &cmd;
         submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = &renderFinishedSemaphore;
+        submitInfo.pSignalSemaphores = &getCurrentFrame().mRenderFinishedSemaphore;
 
-        vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, fence );
+        vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, getCurrentFrame().mRenderFence);
 
         ///
         /// Present the swapchain image.
         /// 
         VkPresentInfoKHR info = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
         info.waitSemaphoreCount = 1;
-        info.pWaitSemaphores = &renderFinishedSemaphore;
+        info.pWaitSemaphores = &getCurrentFrame().mRenderFinishedSemaphore;
         info.swapchainCount = 1;
         info.pSwapchains = &mSwapchain;
         info.pImageIndices = &imageIndex;
         VK_CHECK(vkQueuePresentKHR(mGraphicsQueue, &info));
     }
+
     VK_CHECK(vkDeviceWaitIdle(mDevice));
 
-    vkDestroyFence(mDevice, fence, nullptr);
-    vkDestroySemaphore(mDevice, imageAvailableSemaphore, nullptr);
-    vkDestroySemaphore(mDevice, renderFinishedSemaphore, nullptr);
+    for (int i = 0; i < FRAME_OVERLAP; ++i)
+    {
+        vkDestroyFence(mDevice, getCurrentFrame().mRenderFence, nullptr);
+        vkDestroySemaphore(mDevice, getCurrentFrame().mImageAvailableSemaphore, nullptr);
+        vkDestroySemaphore(mDevice, getCurrentFrame().mRenderFinishedSemaphore, nullptr);
+
+        vkDestroyCommandPool(mDevice, getCurrentFrame().mCommandPool, nullptr);
+    }
 }
 
 
