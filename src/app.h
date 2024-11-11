@@ -42,7 +42,6 @@ public:
 	void init();
 	void initSwapchain();
 	void initFrameResources();
-	void initAllocators();
 
 
 	void draw();
