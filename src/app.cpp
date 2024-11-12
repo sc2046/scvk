@@ -52,7 +52,7 @@ void VulkanApp::init()
     initSwapchain();
     initFrameResources();
     initGlobalResources();
-    initDescriptors();
+    //initDescriptors();
     initMeshPipeline();
 
 
@@ -60,28 +60,10 @@ void VulkanApp::init()
     std::vector<uint32_t> indices;
     loadMeshFromfile("../../assets/monkey_smooth.obj", vertices, indices);
 
-   // std::array<Vertex, 4> vertices;
-   //vertices[0].position = { 0.5,-0.5, 0 };
-   //vertices[1].position = { 0.5,0.5, 0 };
-   //vertices[2].position = { -0.5,-0.5, 0 };
-   //vertices[3].position = { -0.5,0.5, 0 };
-   //vertices[0].color = { 0,0, 0,1 };
-   //vertices[1].color = { 0.5,0.5,0.5 ,1 };
-   //vertices[2].color = { 1,0, 0,1 };
-   //vertices[3].color = { 0,1, 0,1 };
+    mesh        = uploadMesh(indices, vertices);
+    numIndices  = indices.size();
 
-   // std::array<uint32_t, 6> indices;
-   // indices[0] = 0;
-   // indices[1] = 1;
-   // indices[2] = 2;
-   // indices[3] = 2;
-   // indices[4] = 1;
-   // indices[5] = 3;
-
-    mesh = uploadMesh(indices, vertices);
-    numIndices = indices.size();
-
-    //delete the rectangle data on engine shutdown
+    ////delete the rectangle data on engine shutdown
     mDeletionQueue.push_function([&]() {
         vmaDestroyBuffer(mVmaAllocator, mesh.mVertexBuffer.mBuffer, mesh.mVertexBuffer.mAllocation);
         vmaDestroyBuffer(mVmaAllocator, mesh.mIndexBuffer.mBuffer, mesh.mIndexBuffer.mAllocation);
@@ -414,22 +396,22 @@ void VulkanApp::initMeshPipeline()
 void VulkanApp::draw(VkCommandBuffer cmd)
 {
     // Define the attachments to render to.
-    VkRenderingAttachmentInfo colorAttachment = {.sType =  VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
-    colorAttachment.imageView = mSwapchainImageViews[mSwapchainImageIndex];
-    colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR /*VK_ATTACHMENT_LOAD_OP_LOAD*/;
+    VkRenderingAttachmentInfo colorAttachment   = {.sType =  VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+    colorAttachment.imageView                   = mSwapchainImageViews[mSwapchainImageIndex];
+    colorAttachment.imageLayout                 = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment.loadOp                      = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.clearValue.color            = {0.f,0.f,0.f,0.f};
 
     // The storeOp specifies what to do with the data after rendering. In this case we want to store it in memory.
     // For example, the contents of a depth buffer could be discarded after rendering, unless is used in subsequent passes.
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    //if (clear) { colorAttachment.clearValue = *clear; }
+    colorAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
 
-    VkRenderingAttachmentInfo depthAttachment = { .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
-    depthAttachment.imageView = mDepthImage.mImageView;
-    depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    depthAttachment.clearValue.depthStencil.depth = 1.f;
+    VkRenderingAttachmentInfo depthAttachment       = { .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+    depthAttachment.imageView                       = mDepthImage.mImageView;
+    depthAttachment.imageLayout                     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachment.loadOp                          = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp                         = VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachment.clearValue.depthStencil.depth   = 1.f;
 
     VkRenderingInfo renderInfo = { VK_STRUCTURE_TYPE_RENDERING_INFO };
     renderInfo.renderArea = VkRect2D{ VkOffset2D { 0, 0 }, mSwapchainExtent };
@@ -442,22 +424,17 @@ void VulkanApp::draw(VkCommandBuffer cmd)
     vkCmdBeginRendering(cmd, &renderInfo);
 
     //set dynamic viewport and scissor
-    VkViewport viewport = {};
-    viewport.x = 0;
-    viewport.y = 0;
-    viewport.width = mSwapchainExtent.width;
-    viewport.height = mSwapchainExtent.height;
-    viewport.minDepth = 0.f;
-    viewport.maxDepth = 1.f;
-
+    const VkViewport viewport = {
+        0,0,                                                // x,y
+        mSwapchainExtent.width, mSwapchainExtent.height,    // width, height
+        0.f,1.f                                             // min, max
+    };
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
-    VkRect2D scissor = {};
-    scissor.offset.x = 0;
-    scissor.offset.y = 0;
-    scissor.extent.width = mSwapchainExtent.width;
-    scissor.extent.height = mSwapchainExtent.height;
-
+    const VkRect2D scissor = {
+        0,0,                                                // x,y
+        mSwapchainExtent.width, mSwapchainExtent.height,    // width, height
+    };
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     // Bind mesh pipeline
@@ -474,8 +451,8 @@ void VulkanApp::draw(VkCommandBuffer cmd)
     glm::mat4 projection    = glm::perspective(glm::radians(70.f), float(mSwapchainExtent.width) / mSwapchainExtent.height, 0.01f, 1000.f);
     projection[1][1]        *= -1;
     glm::mat4 model         = glm::rotate(glm::mat4(1.f), glm::radians(10.f * float(glfwGetTime())), glm::vec3( 0.f,1.f,0.f ));
-
     push_constants.mWorldMatrix = projection * view * model;
+    
     vkCmdPushConstants(cmd, mMeshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
 
     // Render indexed mesh.
@@ -631,11 +608,11 @@ void VulkanApp::run()
 
     for (int i = 0; i < FRAME_OVERLAP; ++i)
     {
-        vkDestroyFence(mDevice, getCurrentFrame().mRenderFence, nullptr);
-        vkDestroySemaphore(mDevice, getCurrentFrame().mImageAvailableSemaphore, nullptr);
-        vkDestroySemaphore(mDevice, getCurrentFrame().mRenderFinishedSemaphore, nullptr);
+        vkDestroyFence(mDevice, mFrames[i].mRenderFence, nullptr);
+        vkDestroySemaphore(mDevice, mFrames[i].mImageAvailableSemaphore, nullptr);
+        vkDestroySemaphore(mDevice, mFrames[i].mRenderFinishedSemaphore, nullptr);
 
-        vkDestroyCommandPool(mDevice, getCurrentFrame().mCommandPool, nullptr);
+        vkDestroyCommandPool(mDevice, mFrames[i].mCommandPool, nullptr);
     }
 }
 
@@ -769,21 +746,16 @@ GPUMeshBuffers VulkanApp::uploadMesh(std::span<uint32_t> indices, std::span<Vert
     deviceBufferCreateInfo.usage          = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     deviceBufferCreateInfo.sharingMode    = VK_SHARING_MODE_EXCLUSIVE;
     const VmaAllocationCreateInfo deviceBufferAllocInfo{ .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, };
-
     VK_CHECK(vmaCreateBuffer(mVmaAllocator, &deviceBufferCreateInfo, &deviceBufferAllocInfo, &newSurface.mVertexBuffer.mBuffer, &newSurface.mVertexBuffer.mAllocation, &newSurface.mVertexBuffer.mAllocInfo));
-    mDeletionQueue.push_function([&]() {vmaDestroyBuffer(mVmaAllocator, newSurface.mVertexBuffer.mBuffer, newSurface.mVertexBuffer.mAllocation);});
 
     newSurface.mVertexBufferAddress = scvk::GetBufferDeviceAddress(mDevice, newSurface.mVertexBuffer);
-
 
     // Create index buffer
     deviceBufferCreateInfo.size = indexBufferSize;
     deviceBufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
     deviceBufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
     VK_CHECK(vmaCreateBuffer(mVmaAllocator, &deviceBufferCreateInfo, &deviceBufferAllocInfo, &newSurface.mIndexBuffer.mBuffer, &newSurface.mIndexBuffer.mAllocation, &newSurface.mIndexBuffer.mAllocInfo));
-    mDeletionQueue.push_function([&]() {vmaDestroyBuffer(mVmaAllocator, newSurface.mIndexBuffer.mBuffer, newSurface.mIndexBuffer.mAllocation);});
-
+   
     // Create staging buffer to hold both vertices and indices.
     scvk::Buffer staging_buffer;
 

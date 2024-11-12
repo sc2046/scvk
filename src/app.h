@@ -13,14 +13,22 @@ constexpr unsigned int FRAME_OVERLAP = 2;
 struct FrameResources {
 
 	// Synchronisation primitives for frame submission.
-	VkSemaphore mImageAvailableSemaphore;
-	VkSemaphore mRenderFinishedSemaphore;
-	VkFence		mRenderFence;
+	VkSemaphore		mImageAvailableSemaphore;
+	VkSemaphore		mRenderFinishedSemaphore;
+	VkFence			mRenderFence;
 
-	VkCommandPool mCommandPool;
+	VkCommandPool	mCommandPool;
 	VkCommandBuffer mMainCommandBuffer;
 };
 
+//struct SwapchainResources
+//{
+//	VkSwapchainKHR				mSwapchain;
+//	std::vector<VkImage>		mSwapchainImages;
+//	std::vector<VkImageView>	mSwapchainImageViews;
+//	VkFormat					mSwapchainImageFormat;
+//	VkExtent2D					mSwapchainExtent;
+//};
 
 class VulkanApp {
 public:
@@ -56,9 +64,8 @@ public:
 	void draw(VkCommandBuffer cmd);
 
 	void immediateSubmit(std::function<void(VkCommandBuffer cmd)>&& function);
+
 	GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
-
-
 	GPUMeshBuffers mesh;
 
 private:
@@ -76,8 +83,6 @@ private:
 	void createSwapchain(uint32_t width, uint32_t height);
 	void destroySwapchain();
 	
-	//VkDescriptorSet			mDrawImageDescriptors;
-	//VkDescriptorSetLayout	mDrawImageDescriptorLayout;
 
 	// Vulkan context.
 	//-----------------------------------------------
@@ -125,6 +130,4 @@ private:
 		}
 	};
 	DeletionQueue mDeletionQueue;
-
-
 };
