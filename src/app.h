@@ -5,6 +5,7 @@
 
 #include "buffer.h"
 #include "descriptors.h"
+#include "image.h"
 #include "mesh.h"
 
 
@@ -41,6 +42,8 @@ public:
 	std::vector<VkImageView>	mSwapchainImageViews;
 	VkFormat					mSwapchainImageFormat;
 	VkExtent2D					mSwapchainExtent;
+
+	Image						mDepthImage;
 
 
 	uint32_t					mSwapchainImageIndex;

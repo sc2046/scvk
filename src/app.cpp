@@ -60,6 +60,24 @@ void VulkanApp::init()
     std::vector<uint32_t> indices;
     loadMeshFromfile("../../assets/monkey_smooth.obj", vertices, indices);
 
+   // std::array<Vertex, 4> vertices;
+   //vertices[0].position = { 0.5,-0.5, 0 };
+   //vertices[1].position = { 0.5,0.5, 0 };
+   //vertices[2].position = { -0.5,-0.5, 0 };
+   //vertices[3].position = { -0.5,0.5, 0 };
+   //vertices[0].color = { 0,0, 0,1 };
+   //vertices[1].color = { 0.5,0.5,0.5 ,1 };
+   //vertices[2].color = { 1,0, 0,1 };
+   //vertices[3].color = { 0,1, 0,1 };
+
+   // std::array<uint32_t, 6> indices;
+   // indices[0] = 0;
+   // indices[1] = 1;
+   // indices[2] = 2;
+   // indices[3] = 2;
+   // indices[4] = 1;
+   // indices[5] = 3;
+
     mesh = uploadMesh(indices, vertices);
     numIndices = indices.size();
 
@@ -295,13 +313,13 @@ void VulkanApp::initMeshPipeline()
     pipelineInfo.pVertexInputState = &vertexInputInfo;
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    inputAssembly.primitiveRestartEnable = VK_FALSE;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    inputAssembly.topology                  = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable    = VK_FALSE;
+    pipelineInfo.pInputAssemblyState        = &inputAssembly;
 
     VkPipelineViewportStateCreateInfo viewportState = { VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
     viewportState.viewportCount = 1;
-    viewportState.scissorCount = 1;
+    viewportState.scissorCount  = 1;
     pipelineInfo.pViewportState = &viewportState;
 
     VkPipelineRasterizationStateCreateInfo rasterizer = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
@@ -309,7 +327,7 @@ void VulkanApp::initMeshPipeline()
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
     rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
     pipelineInfo.pRasterizationState = &rasterizer;
@@ -319,7 +337,18 @@ void VulkanApp::initMeshPipeline()
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
     pipelineInfo.pMultisampleState = &multisampling;
 
-    pipelineInfo.pDepthStencilState = nullptr;
+    VkPipelineDepthStencilStateCreateInfo depthStencil = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE; //TODO: check
+    depthStencil.depthCompareOp         = VK_COMPARE_OP_LESS_OR_EQUAL; //TODO: check
+    depthStencil.depthBoundsTestEnable  = VK_FALSE;
+    depthStencil.stencilTestEnable      = VK_FALSE;
+    depthStencil.front = {};
+    depthStencil.back = {}; 
+    depthStencil.minDepthBounds = 0.f;
+    depthStencil.maxDepthBounds = 1.f;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+
 
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -343,9 +372,9 @@ void VulkanApp::initMeshPipeline()
     pipelineInfo.pDynamicState = &dynamicState;
 
     VkPipelineRenderingCreateInfo rInfo = { VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
-    rInfo.colorAttachmentCount = 1;
-    rInfo.pColorAttachmentFormats = &mSwapchainImageFormat;
-    rInfo.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
+    rInfo.colorAttachmentCount      = 1;
+    rInfo.pColorAttachmentFormats   = &mSwapchainImageFormat;
+    rInfo.depthAttachmentFormat     = mDepthImage.mFormat;
     pipelineInfo.pNext = &rInfo;
 
     if (VkResult err = vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &pipelineInfo,
@@ -385,22 +414,29 @@ void VulkanApp::initMeshPipeline()
 void VulkanApp::draw(VkCommandBuffer cmd)
 {
     // Define the attachments to render to.
-    VkRenderingAttachmentInfo colorAttachment{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+    VkRenderingAttachmentInfo colorAttachment = {.sType =  VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
     colorAttachment.imageView = mSwapchainImageViews[mSwapchainImageIndex];
     colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttachment.loadOp = /*clear ? VK_ATTACHMENT_LOAD_OP_CLEAR :*/ VK_ATTACHMENT_LOAD_OP_LOAD;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR /*VK_ATTACHMENT_LOAD_OP_LOAD*/;
 
     // The storeOp specifies what to do with the data after rendering. In this case we want to store it in memory.
     // For example, the contents of a depth buffer could be discarded after rendering, unless is used in subsequent passes.
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     //if (clear) { colorAttachment.clearValue = *clear; }
 
+    VkRenderingAttachmentInfo depthAttachment = { .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+    depthAttachment.imageView = mDepthImage.mImageView;
+    depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachment.clearValue.depthStencil.depth = 1.f;
+
     VkRenderingInfo renderInfo = { VK_STRUCTURE_TYPE_RENDERING_INFO };
     renderInfo.renderArea = VkRect2D{ VkOffset2D { 0, 0 }, mSwapchainExtent };
     renderInfo.layerCount = 1;
     renderInfo.colorAttachmentCount = 1;
     renderInfo.pColorAttachments = &colorAttachment;
-    renderInfo.pDepthAttachment = nullptr;
+    renderInfo.pDepthAttachment = &depthAttachment;
     renderInfo.pStencilAttachment = nullptr;
 
     vkCmdBeginRendering(cmd, &renderInfo);
@@ -413,6 +449,7 @@ void VulkanApp::draw(VkCommandBuffer cmd)
     viewport.height = mSwapchainExtent.height;
     viewport.minDepth = 0.f;
     viewport.maxDepth = 1.f;
+
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
     VkRect2D scissor = {};
@@ -420,6 +457,7 @@ void VulkanApp::draw(VkCommandBuffer cmd)
     scissor.offset.y = 0;
     scissor.extent.width = mSwapchainExtent.width;
     scissor.extent.height = mSwapchainExtent.height;
+
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     // Bind mesh pipeline
@@ -433,10 +471,11 @@ void VulkanApp::draw(VkCommandBuffer cmd)
 
     //make a model view matrix for rendering the object
     glm::mat4 view          = glm::translate(glm::mat4(1.f), { 0.f,0.f,-2.f });
-    glm::mat4 projection    = glm::perspective(glm::radians(70.f), float(mSwapchainExtent.width) / mSwapchainExtent.height, 0.1f, 1000.f);
-    projection[1][1] *= -1;
-    push_constants.mWorldMatrix = projection * view;
+    glm::mat4 projection    = glm::perspective(glm::radians(70.f), float(mSwapchainExtent.width) / mSwapchainExtent.height, 0.01f, 1000.f);
+    projection[1][1]        *= -1;
+    glm::mat4 model         = glm::rotate(glm::mat4(1.f), glm::radians(10.f * float(glfwGetTime())), glm::vec3( 0.f,1.f,0.f ));
 
+    push_constants.mWorldMatrix = projection * view * model;
     vkCmdPushConstants(cmd, mMeshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
 
     // Render indexed mesh.
@@ -483,24 +522,42 @@ void VulkanApp::run()
             imageRange.baseArrayLayer = 0;
             imageRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
-            // Transition swapchain image into one suitable for drawing.
+            // Transition swapchain images into one suitable for drawing.
             //TODO: Fix masks.
             {
-                VkImageMemoryBarrier2 imageBarrier{ .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
-                imageBarrier.pNext = nullptr;
+                std::array<VkImageMemoryBarrier2, 2> imageBarriers;
 
-                imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-                imageBarrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
-                imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-                imageBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
-                imageBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-                imageBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; /*VK_IMAGE_LAYOUT_GENERAL*/
-                imageBarrier.subresourceRange = imageRange;
-                imageBarrier.image = mSwapchainImages[mSwapchainImageIndex];
+                // Swapchain color image
+                imageBarriers[0] = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+                imageBarriers[0].srcStageMask       = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                imageBarriers[0].srcAccessMask      = VK_ACCESS_2_MEMORY_WRITE_BIT;
+                imageBarriers[0].dstStageMask       = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                imageBarriers[0].dstAccessMask      = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
+                imageBarriers[0].oldLayout          = VK_IMAGE_LAYOUT_UNDEFINED;
+                imageBarriers[0].newLayout          = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; 
+                imageBarriers[0].subresourceRange   = imageRange;
+                imageBarriers[0].image              = mSwapchainImages[mSwapchainImageIndex];
+
+                // Swapchain depth image.
+                VkImageSubresourceRange depthRange;
+                depthRange.aspectMask       = VK_IMAGE_ASPECT_DEPTH_BIT;
+                depthRange.baseMipLevel     = 0;
+                depthRange.levelCount       = VK_REMAINING_MIP_LEVELS;
+                depthRange.baseArrayLayer   = 0;
+                depthRange.layerCount       = VK_REMAINING_ARRAY_LAYERS;
+                imageBarriers[1] = { .sType         = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+                imageBarriers[1].srcStageMask       = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                imageBarriers[1].srcAccessMask      = VK_ACCESS_2_MEMORY_WRITE_BIT;
+                imageBarriers[1].dstStageMask       = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                imageBarriers[1].dstAccessMask      = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
+                imageBarriers[1].oldLayout          = VK_IMAGE_LAYOUT_UNDEFINED;
+                imageBarriers[1].newLayout          = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+                imageBarriers[1].subresourceRange   = depthRange;
+                imageBarriers[1].image              = mDepthImage.mImage;
 
                 VkDependencyInfo depInfo = { VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
-                depInfo.imageMemoryBarrierCount = 1;
-                depInfo.pImageMemoryBarriers    = &imageBarrier;
+                depInfo.imageMemoryBarrierCount = 2;
+                depInfo.pImageMemoryBarriers    = imageBarriers.data();
 
                 vkCmdPipelineBarrier2(cmd, &depInfo);
             }
@@ -651,6 +708,44 @@ void VulkanApp::createSwapchain(uint32_t width, uint32_t height)
     mSwapchainImageViews    = vkbSwapchain.get_image_views().value();
     mSwapchainExtent        = vkbSwapchain.extent;
 
+
+    // Create depth buffer for swapchain.
+    mDepthImage.mFormat = VK_FORMAT_D32_SFLOAT;
+    mDepthImage.mExtents = { mSwapchainExtent.width, mSwapchainExtent.height, 1 };
+
+    // allocate and create the image for the depth buffer
+    VkImageCreateInfo info = { .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+    info.imageType      = VK_IMAGE_TYPE_2D;
+    info.format         = mDepthImage.mFormat;
+    info.extent         = mDepthImage.mExtents;
+    info.mipLevels      = 1;
+    info.arrayLayers    = 1;
+    info.samples        = VK_SAMPLE_COUNT_1_BIT;
+    info.tiling         = VK_IMAGE_TILING_OPTIMAL;
+    info.usage          = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    info.sharingMode    = VK_SHARING_MODE_EXCLUSIVE;
+    info.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VmaAllocationCreateInfo rimg_allocinfo = {
+        .usage          = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+        .requiredFlags  = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+    };
+    vmaCreateImage(mVmaAllocator, &info, &rimg_allocinfo, &mDepthImage.mImage, &mDepthImage.mAllocation, nullptr);
+    mDeletionQueue.push_function([&]() {vmaDestroyImage(mVmaAllocator, mDepthImage.mImage, mDepthImage.mAllocation);});
+
+    // create the image view for the depth buffer.
+    VkImageViewCreateInfo viewInfo = {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+    viewInfo.viewType                           = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.image                              = mDepthImage.mImage;
+    viewInfo.format                             = mDepthImage.mFormat;
+    viewInfo.subresourceRange.baseMipLevel      = 0;
+    viewInfo.subresourceRange.levelCount        = 1;
+    viewInfo.subresourceRange.baseArrayLayer    = 0;
+    viewInfo.subresourceRange.layerCount        = 1;
+    viewInfo.subresourceRange.aspectMask        = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+    VK_CHECK(vkCreateImageView(mDevice, &viewInfo, nullptr, &mDepthImage.mImageView));
+    mDeletionQueue.push_function([&]() {vkDestroyImageView(mDevice, mDepthImage.mImageView, nullptr);});
 }
 
 
