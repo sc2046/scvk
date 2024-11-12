@@ -4,6 +4,7 @@
 
 #include "app.h"
 #include "mesh.h"
+#include "mesh_loader.h"
 #include "pipelines.h"
 
 #include <GLFW/glfw3.h>
@@ -22,6 +23,8 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+
+uint32_t numIndices;
 
 void VulkanApp::init()
 {
@@ -53,34 +56,17 @@ void VulkanApp::init()
     initMeshPipeline();
 
 
-    std::array<Vertex, 4> rect_vertices;
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+    loadMeshFromfile("../../assets/monkey_smooth.obj", vertices, indices);
 
-    rect_vertices[0].position = { 0.5,-0.5, 0 };
-    rect_vertices[1].position = { 0.5,0.5, 0 };
-    rect_vertices[2].position = { -0.5,-0.5, 0 };
-    rect_vertices[3].position = { -0.5,0.5, 0 };
-
-    rect_vertices[0].color = { 0,0, 0,1 };
-    rect_vertices[1].color = { 0.5,0.5,0.5 ,1 };
-    rect_vertices[2].color = { 1,0, 0,1 };
-    rect_vertices[3].color = { 0,1, 0,1 };
-
-    std::array<uint32_t, 6> rect_indices;
-
-    rect_indices[0] = 0;
-    rect_indices[1] = 1;
-    rect_indices[2] = 2;
-
-    rect_indices[3] = 2;
-    rect_indices[4] = 1;
-    rect_indices[5] = 3;
-
-    rectangle = uploadMesh(rect_indices, rect_vertices);
+    mesh = uploadMesh(indices, vertices);
+    numIndices = indices.size();
 
     //delete the rectangle data on engine shutdown
     mDeletionQueue.push_function([&]() {
-        vmaDestroyBuffer(mVmaAllocator, rectangle.mVertexBuffer.mBuffer, rectangle.mVertexBuffer.mAllocation);
-        vmaDestroyBuffer(mVmaAllocator, rectangle.mIndexBuffer.mBuffer, rectangle.mIndexBuffer.mAllocation);
+        vmaDestroyBuffer(mVmaAllocator, mesh.mVertexBuffer.mBuffer, mesh.mVertexBuffer.mAllocation);
+        vmaDestroyBuffer(mVmaAllocator, mesh.mIndexBuffer.mBuffer, mesh.mIndexBuffer.mAllocation);
         });
 }
 
@@ -442,13 +428,20 @@ void VulkanApp::draw(VkCommandBuffer cmd)
     // Push push constants.
     GPUDrawPushConstants push_constants = {
         .mWorldMatrix           = glm::mat4{ 1.f },
-        .mVertexBufferAddress   = rectangle.mVertexBufferAddress
+        .mVertexBufferAddress   = mesh.mVertexBufferAddress
     };
+
+    //make a model view matrix for rendering the object
+    glm::mat4 view          = glm::translate(glm::mat4(1.f), { 0.f,0.f,-2.f });
+    glm::mat4 projection    = glm::perspective(glm::radians(70.f), float(mSwapchainExtent.width) / mSwapchainExtent.height, 0.1f, 1000.f);
+    projection[1][1] *= -1;
+    push_constants.mWorldMatrix = projection * view;
+
     vkCmdPushConstants(cmd, mMeshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
 
     // Render indexed mesh.
-    vkCmdBindIndexBuffer(cmd, rectangle.mIndexBuffer.mBuffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+    vkCmdBindIndexBuffer(cmd, mesh.mIndexBuffer.mBuffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, numIndices, 1, 0, 0, 0);
 
     vkCmdEndRendering(cmd);
 }

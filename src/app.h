@@ -37,10 +37,12 @@ public:
 
 	// Swapchain stuff.
 	VkSwapchainKHR				mSwapchain;
-	VkFormat					mSwapchainImageFormat;
 	std::vector<VkImage>		mSwapchainImages;
 	std::vector<VkImageView>	mSwapchainImageViews;
+	VkFormat					mSwapchainImageFormat;
 	VkExtent2D					mSwapchainExtent;
+
+
 	uint32_t					mSwapchainImageIndex;
 
 
@@ -54,7 +56,7 @@ public:
 	GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
 
 
-	GPUMeshBuffers rectangle;
+	GPUMeshBuffers mesh;
 
 private:
 
