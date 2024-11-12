@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <algorithm>
 #include <array>
 #include <deque>
 #include <filesystem>
@@ -7,6 +8,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <span>
 #include <string>
@@ -27,7 +29,6 @@
 
 namespace fs = std::filesystem;
 
-
 #define VK_CHECK(x)                                                     \
     do {                                                                \
         VkResult err = x;                                               \
@@ -38,21 +39,4 @@ namespace fs = std::filesystem;
     } while (0)
 
 
-struct Buffer
-{
-    VkBuffer		mBuffer;
-    VmaAllocation	mAllocation;
-    uint32_t		mByteSize;
-};
 
-struct Image
-{
-    VkImage         mImage;
-    VmaAllocation   mAllocation;
-};
-
-struct AccelerationStructure
-{
-    VkAccelerationStructureKHR	mHandle;
-    Buffer						mData; // Stores the Acceleration structure data.
-};

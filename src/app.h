@@ -3,6 +3,10 @@
 #include "vk_types.h"
 #include "vk_mem_alloc.h"
 
+#include "buffer.h"
+#include "descriptors.h"
+#include "mesh.h"
+
 
 constexpr unsigned int FRAME_OVERLAP = 2;
 struct FrameResources {
@@ -27,8 +31,8 @@ public:
 	struct GLFWwindow*	mWindow{ nullptr }; // Forward declaration.
 	VkExtent2D			mWindowExtents{ 1024, 768 };
 
-	int mFrameNumber{ 0 };
-	FrameResources mFrames[FRAME_OVERLAP];
+	int					mFrameNumber{ 0 };
+	FrameResources		mFrames[FRAME_OVERLAP];
 	FrameResources& getCurrentFrame() { return mFrames[mFrameNumber % FRAME_OVERLAP]; };
 
 	// Swapchain stuff.
@@ -37,28 +41,39 @@ public:
 	std::vector<VkImage>		mSwapchainImages;
 	std::vector<VkImageView>	mSwapchainImageViews;
 	VkExtent2D					mSwapchainExtent;
+	uint32_t					mSwapchainImageIndex;
 
 
 	void init();
-	void initSwapchain();
-	void initFrameResources();
-
-
-	void draw();
-
-
 	void run();
-
 	void cleanup();
 
+	void draw(VkCommandBuffer cmd);
 
+	void immediateSubmit(std::function<void(VkCommandBuffer cmd)>&& function);
+	GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
+
+
+	GPUMeshBuffers rectangle;
 
 private:
 
 	void initContext(bool validation);
+	void initSwapchain();
+	void initFrameResources();
+	void initGlobalResources();
+	void initDescriptors();
+
+
+	void initMeshPipeline();
+	
+	
 	void createSwapchain(uint32_t width, uint32_t height);
 	void destroySwapchain();
 	
+	//VkDescriptorSet			mDrawImageDescriptors;
+	//VkDescriptorSetLayout	mDrawImageDescriptorLayout;
+
 	// Vulkan context.
 	//-----------------------------------------------
 	VkInstance					mInstance;
@@ -69,44 +84,22 @@ private:
 	uint32_t					mGraphicsQueueFamily;
 	VmaAllocator				mVmaAllocator;
 
-	// Allocators.
+	// immediate submit structures
 	//-----------------------------------------------
-	VkCommandPool				mCommandPool;
+	VkFence						mImmFence;
+	VkCommandBuffer				mImmCommandBuffer;
+	VkCommandPool				mImmCommandPool;
 
 	// Descriptors
 	//-----------------------------------------------
-	VkDescriptorPool			mDescriptorPool;
-	VkDescriptorSetLayout		mDescriptorSetLayout;
-	VkDescriptorSet				mDescriptorSet;
-
-	// Image
-	//-----------------------------------------------
-	Image						mImageLinear;
-	Image						mImageRender;
-	VkImageView					mImageView;
-
-	// Texture
-	//-----------------------------------------------
-	Image		mTextureImage;
-	uint32_t	mTextureByteSize;
-	VkExtent2D	mTextureExtents;
-
-	VkImageView mTextureImageView;
-	VkSampler	mTextureSampler;
-
-	// Acceleration structures
-	//-----------------------------------------------
-	AccelerationStructure		mAabbBlas;
-	Buffer						mAabbGeometryBuffer;
-	
-	AccelerationStructure		mTlas;
-	Buffer						mTlasInstanceBuffer;  // Stores the per-instance data (matrices, materialID etc...) 
+	DescriptorAllocator			mGlobalDescriptorAllocator;
 
 	// Pipeline Data
 	//-----------------------------------------------
-	VkShaderModule				mComputeShader;
-	VkPipelineLayout			mPipelineLayout;
-	VkPipeline					mComputePipeline;
+	VkShaderModule		mVertexShader;
+	VkShaderModule		mFragmentShader;
+	VkPipelineLayout	mMeshPipelineLayout;
+	VkPipeline			mMeshPipeline;
 	
 	//-----------------------------------------------
 	struct DeletionQueue
