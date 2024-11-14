@@ -39,5 +39,24 @@ namespace scvk
 		VkBufferDeviceAddressInfo addressInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = buffer .mBuffer};
 		return vkGetBufferDeviceAddress(device, &addressInfo);
 	}
+
+	inline Buffer createHostVisibleStagingBuffer(VmaAllocator allocator, uint32_t size_bytes,
+		VkBufferUsageFlags usage = 0, VkMemoryPropertyFlags alloc_flags = 0)
+	{
+		Buffer buf;
+		VkBufferCreateInfo createInfo{
+			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+			.size			= size_bytes,
+			.usage			= usage | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			.sharingMode	= VK_SHARING_MODE_EXCLUSIVE
+		};
+		const VmaAllocationCreateInfo allocCreateInfo{
+			.flags			= VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
+			.usage			= VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+			.requiredFlags	= alloc_flags | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+		};
+		VK_CHECK(vmaCreateBuffer(allocator, &createInfo, &allocCreateInfo, &buf.mBuffer, &buf.mAllocation, &buf.mAllocInfo));
+		return buf;
+	}
 }
 

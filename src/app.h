@@ -7,6 +7,8 @@
 #include "descriptors.h"
 #include "image.h"
 #include "mesh.h"
+#include "texture.h"
+#include "timer.h"
 
 
 constexpr unsigned int FRAME_OVERLAP = 2;
@@ -51,7 +53,7 @@ public:
 	VkFormat					mSwapchainImageFormat;
 	VkExtent2D					mSwapchainExtent;
 
-	Image						mDepthImage;
+	scvk::Image					mDepthImage;
 
 
 	uint32_t					mSwapchainImageIndex;
@@ -68,6 +70,12 @@ public:
 	GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
 	GPUMeshBuffers mesh;
 
+	scvk::Texture uploadTexture(const char* path);
+	scvk::Texture mTexture;
+	VkDescriptorSetLayout mImageDescriptorSetLayout;
+	VkDescriptorSet mImageDescriptorSet;
+
+
 private:
 
 	void initContext(bool validation);
@@ -83,6 +91,8 @@ private:
 	void createSwapchain(uint32_t width, uint32_t height);
 	void destroySwapchain();
 	
+	scvk::Timer mTimer;
+
 
 	// Vulkan context.
 	//-----------------------------------------------

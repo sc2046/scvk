@@ -3,6 +3,7 @@
 #include <volk.h>
 
 #include "app.h"
+#include <timer.h>
 #include "mesh.h"
 #include "mesh_loader.h"
 #include "pipelines.h"
@@ -11,7 +12,6 @@
 
 #include <vk_initializers.h>
 #include "vk_types.h"
-
 
 #include <VkBootstrap.h>
 
@@ -52,7 +52,7 @@ void VulkanApp::init()
     initSwapchain();
     initFrameResources();
     initGlobalResources();
-    //initDescriptors();
+    initDescriptors();
     initMeshPipeline();
 
 
@@ -62,11 +62,15 @@ void VulkanApp::init()
 
     mesh        = uploadMesh(indices, vertices);
     numIndices  = indices.size();
-
     ////delete the rectangle data on engine shutdown
     mDeletionQueue.push_function([&]() {
         vmaDestroyBuffer(mVmaAllocator, mesh.mVertexBuffer.mBuffer, mesh.mVertexBuffer.mAllocation);
         vmaDestroyBuffer(mVmaAllocator, mesh.mIndexBuffer.mBuffer, mesh.mIndexBuffer.mAllocation);
+        });
+
+    mTexture = uploadTexture("../../assets/statue.jpg");
+    mDeletionQueue.push_function([&]() {
+        scvk::destroyTexture(mDevice, mTexture);
         });
 }
 
@@ -233,20 +237,19 @@ void VulkanApp::initGlobalResources()
 
 void VulkanApp::initDescriptors()
 {
-    ////create a descriptor pool that will hold 10 sets with 1 image each
-    //std::vector<DescriptorAllocator::PoolSizeRatio> sizes =
-    //{
-    //    { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 }
-    //};
 
-    //mGlobalDescriptorAllocator.initPool(mDevice, 10, sizes);
+    //create a descriptor pool that will hold 10 sets with 1 image each
+    std::vector<DescriptorAllocator::PoolSizeRatio> sizes =
+    {
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 }
+    };
+    mGlobalDescriptorAllocator.initPool(mDevice, 10, sizes);
 
-    ////make the descriptor set layout for our compute draw
-    //{
-    //    DescriptorLayoutBuilder builder;
-    //    builder.addBinding(0, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-    //    mDrawImageDescriptorLayout = builder.build(mDevice, VK_SHADER_STAGE_COMPUTE_BIT);
-    //}
+    // Bulid the descriptor layout.
+    DescriptorLayoutBuilder builder;
+    builder.addBinding(0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    mImageDescriptorSetLayout = builder.build(mDevice, VK_SHADER_STAGE_FRAGMENT_BIT);
+
 }
 
 void VulkanApp::initMeshPipeline()
@@ -283,6 +286,9 @@ void VulkanApp::initMeshPipeline()
     VkPipelineLayoutCreateInfo pipeline_layout_info = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
     pipeline_layout_info.pushConstantRangeCount = 1;
     pipeline_layout_info.pPushConstantRanges    = &bufferRange;
+    
+    pipeline_layout_info.setLayoutCount = 1;
+    pipeline_layout_info.pSetLayouts = &mImageDescriptorSetLayout;
 
     VK_CHECK(vkCreatePipelineLayout(mDevice, &pipeline_layout_info, nullptr, &mMeshPipelineLayout));
 
@@ -440,6 +446,9 @@ void VulkanApp::draw(VkCommandBuffer cmd)
     // Bind mesh pipeline
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mMeshPipeline);
 
+    // Bind descriptors
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mMeshPipelineLayout, 0, 1, &mImageDescriptorSet, 0, nullptr);
+
     // Push push constants.
     GPUDrawPushConstants push_constants = {
         .mWorldMatrix           = glm::mat4{ 1.f },
@@ -466,9 +475,28 @@ void VulkanApp::draw(VkCommandBuffer cmd)
 void VulkanApp::run()
 {
 
+    //TODO: Move into main loop (requires reading into dynamic descriptor pools.)
+    mImageDescriptorSet = mGlobalDescriptorAllocator.allocate(mDevice, mImageDescriptorSetLayout);
+
+    VkDescriptorImageInfo textureDescriptor;
+    textureDescriptor.imageView = mTexture.mImage.mImageView;
+    textureDescriptor.sampler   = mTexture.mSampler;
+    textureDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet write = { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+    write.dstSet = mImageDescriptorSet;
+    write.dstBinding = 0;
+    write.dstArrayElement = 0;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &textureDescriptor;
+    vkUpdateDescriptorSets(mDevice, 1, &write, 0, nullptr);
+
+
     // Main loop
     while (!glfwWindowShouldClose(mWindow)) {
         glfwPollEvents();
+
 
         ///
         /// Wait for the other frame to finish by waiting on it's fence.
@@ -802,3 +830,144 @@ GPUMeshBuffers VulkanApp::uploadMesh(std::span<uint32_t> indices, std::span<Vert
 
 }
 
+scvk::Texture VulkanApp::uploadTexture(const char* path)
+{
+    int width, height;
+    unsigned char* imageData = stbi_load("../../assets/statue.jpg", &width, &height, nullptr, 4);
+    assert(imageData);
+
+    scvk::Image image;
+    image.mFormat = VK_FORMAT_R8G8B8A8_SRGB;
+    image.mExtents = { static_cast<uint32_t>(width),  static_cast<uint32_t>(height), 1 };
+
+    VkImageCreateInfo imageInfo = { .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+    imageInfo.imageType  = VK_IMAGE_TYPE_2D;
+    imageInfo.extent     = image.mExtents;
+    imageInfo.format     = image.mFormat;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    
+    VmaAllocationCreateInfo imageCreateInfo = {};
+    imageCreateInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    imageCreateInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+    VK_CHECK(vmaCreateImage(mVmaAllocator, &imageInfo, &imageCreateInfo, &image.mImage, &image.mAllocation, nullptr));
+
+    VkImageViewCreateInfo viewInfo = { .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+    viewInfo.image = image.mImage;
+    viewInfo.format = image.mFormat;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.components.r = VK_COMPONENT_SWIZZLE_R;
+    viewInfo.components.g = VK_COMPONENT_SWIZZLE_G;
+    viewInfo.components.b = VK_COMPONENT_SWIZZLE_B;
+    viewInfo.components.a = VK_COMPONENT_SWIZZLE_A;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+
+    VK_CHECK(vkCreateImageView(mDevice, &viewInfo, nullptr, &image.mImageView));
+
+    // Create staging buffer and copy image data to it.
+    scvk::Buffer staging = scvk::createHostVisibleStagingBuffer(mVmaAllocator, image.mExtents.width * image.mExtents.height * 4);
+    
+    void* data;
+    vmaMapMemory(mVmaAllocator, staging.mAllocation, (void**)&data);
+    memcpy(data, imageData, image.mExtents.width * image.mExtents.height * 4);
+    vmaUnmapMemory(mVmaAllocator, staging.mAllocation);
+
+    // Transfer data from staging buffer to image.
+
+    immediateSubmit([&](VkCommandBuffer cmd) {
+        const VkImageSubresourceRange range{ VK_IMAGE_ASPECT_COLOR_BIT,
+        0,1,
+        0,1 };
+        
+        VkImageMemoryBarrier2 preCopyMemoryBarrier = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+        preCopyMemoryBarrier.image = image.mImage;
+        preCopyMemoryBarrier.srcAccessMask = 0;
+        preCopyMemoryBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        preCopyMemoryBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT_KHR;
+        preCopyMemoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+        preCopyMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        preCopyMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        preCopyMemoryBarrier.subresourceRange = range;
+
+        VkDependencyInfo dep = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+        dep.imageMemoryBarrierCount = 1;
+        dep.pImageMemoryBarriers = &preCopyMemoryBarrier;
+
+        vkCmdPipelineBarrier2(cmd, &dep);
+
+        // Copy data from staging buffer to image.
+        VkBufferImageCopy region{};
+        region.bufferOffset = 0;
+        region.bufferRowLength = 0;
+        region.bufferImageHeight = 0;
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset = { 0, 0, 0 };
+        region.imageExtent = { image.mExtents.width, image.mExtents.height, 1 };
+
+
+        vkCmdCopyBufferToImage(cmd, staging.mBuffer, image.mImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+        VkImageMemoryBarrier2 postCopyMemoryBarrier = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+        postCopyMemoryBarrier.image = image.mImage;
+        postCopyMemoryBarrier.srcStageMask  = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        postCopyMemoryBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        postCopyMemoryBarrier.dstStageMask  = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+        postCopyMemoryBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT_KHR;
+        postCopyMemoryBarrier.oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        postCopyMemoryBarrier.newLayout     = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        postCopyMemoryBarrier.subresourceRange = range;
+
+        VkDependencyInfo depPost = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+        depPost.imageMemoryBarrierCount = 1;
+        depPost.pImageMemoryBarriers = &postCopyMemoryBarrier;
+
+        vkCmdPipelineBarrier2(cmd, &depPost);
+
+    });
+
+    vmaDestroyBuffer(mVmaAllocator, staging.mBuffer, staging.mAllocation);
+
+
+    // Create a sampler for the texture
+    VkSampler sampler;
+    VkSamplerCreateInfo samplerInfo = { .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+
+    //VkSamplerMipmapMode     mipmapMode;
+    //VkSamplerAddressMode    addressModeU;
+    //VkSamplerAddressMode    addressModeV;
+    //VkSamplerAddressMode    addressModeW;
+    //float                   mipLodBias;
+    //VkBool32                anisotropyEnable;
+    //float                   maxAnisotropy;
+    //VkBool32                compareEnable;
+    //VkCompareOp             compareOp;
+    //float                   minLod;
+    //float                   maxLod;
+    //VkBorderColor           borderColor;
+    //VkBool32                unnormalizedCoordinates;
+
+    VK_CHECK(vkCreateSampler(mDevice, &samplerInfo, nullptr, &sampler));
+
+    scvk::Texture texture;
+    texture.mImage = image;
+    texture.mSampler = sampler;
+    texture.mMipLevels = 1;
+
+    return texture;
+
+}
