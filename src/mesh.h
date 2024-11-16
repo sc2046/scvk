@@ -4,25 +4,34 @@
 #include "vk_types.h"
 
 
-	struct Vertex {
+struct Vertex {
 
-		glm::vec3 position;
-		float uv_x;
-		glm::vec3 normal;
-		float uv_y;
-		glm::vec4 color;
-	};
+	glm::vec3 position;
+	float uv_x;
+	glm::vec3 normal;
+	float uv_y;
+	glm::vec4 color;
+};
 
-	// holds the resources needed for a mesh
-	struct GPUMeshBuffers {
+// holds the resources needed for a mesh
+struct GPUMeshBuffers {
 
-		scvk::Buffer	mIndexBuffer;
-		scvk::Buffer	mVertexBuffer;
-		VkDeviceAddress mVertexBufferAddress;
-	};
+	scvk::Buffer	mIndexBuffer;
+	scvk::Buffer	mVertexBuffer;
+	VkDeviceAddress mVertexBufferAddress;
+};
 
-	// push constants for our mesh object draws
-	struct GPUDrawPushConstants {
-		glm::mat4		mWorldMatrix;
-		VkDeviceAddress mVertexBufferAddress;
-	};
+// push constants for our mesh object draws
+struct GPUDrawPushConstants {
+	glm::mat4		mWorldMatrix = glm::mat4(1.f);
+	VkDeviceAddress mVertexBufferAddress;
+};
+
+
+
+
+struct LoadedMesh
+{
+
+	GPUMeshBuffers mBuffers;
+};

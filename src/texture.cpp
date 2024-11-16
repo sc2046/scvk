@@ -3,9 +3,9 @@
 
 namespace scvk
 {
-	void destroyTexture(VkDevice device, const Texture& texture)
+	void destroyTexture(VkDevice device, VmaAllocator allocator, Texture& texture)
 	{
-		destroyImage(device, texture.mImage);
 		vkDestroySampler(device, texture.mSampler, nullptr);
+		destroyImage(device, allocator, texture.mImage);
 	}
 }

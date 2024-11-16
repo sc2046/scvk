@@ -11,7 +11,37 @@ struct DescriptorLayoutBuilder
 	VkDescriptorSetLayout build(VkDevice device, VkShaderStageFlags shaderStages, void* pNext = nullptr, VkDescriptorSetLayoutCreateFlags flags = 0);
 };
 
+struct DescriptorAllocator {
 
+    struct PoolSizeRatio {
+        VkDescriptorType type;
+        float ratio; // The number of descriptors of type type, PER set.
+    };
+
+    VkDescriptorPool pool;
+
+    void initPool(VkDevice device, uint32_t maxSets, std::span<PoolSizeRatio> poolRatios);
+    void clearDescriptors(VkDevice device);
+    void destroyPool(VkDevice device);
+
+    // Allocates one set from the pool.
+    VkDescriptorSet allocate(VkDevice device, VkDescriptorSetLayout layout);
+};
+
+// Responsible for binding a descriptor set to gpu resources.
+//struct DescriptorSetWriter {
+//    std::deque<VkDescriptorImageInfo> imageInfos;
+//    std::deque<VkDescriptorBufferInfo> bufferInfos;
+//    std::vector<VkWriteDescriptorSet> writes;
+//
+//    void writeImage(int binding, VkImageView image, VkSampler sampler, VkImageLayout layout, VkDescriptorType type);
+//    void writeBuffer(int binding, VkBuffer buffer, size_t size, size_t offset, VkDescriptorType type);
+//     
+//    void clear();
+//    void updateSet(VkDevice device, VkDescriptorSet set);
+//};
+
+/// ==================================================
 
 inline void DescriptorLayoutBuilder::addBinding(uint32_t binding, uint32_t count,  VkDescriptorType type)
 {
@@ -48,22 +78,7 @@ inline VkDescriptorSetLayout DescriptorLayoutBuilder::build(VkDevice device, VkS
     return set;
 }
 
-
-struct DescriptorAllocator {
-
-    struct PoolSizeRatio {
-        VkDescriptorType type;
-        float ratio;
-    };
-
-    VkDescriptorPool pool;
-
-    void initPool(VkDevice device, uint32_t maxSets, std::span<PoolSizeRatio> poolRatios);
-    void clearDescriptors(VkDevice device);
-    void destroyPool(VkDevice device);
-
-    VkDescriptorSet allocate(VkDevice device, VkDescriptorSetLayout layout);
-};
+/// ========================================================================
 
 inline void  DescriptorAllocator::initPool(VkDevice device, uint32_t maxSets, std::span<PoolSizeRatio> poolRatios)
 {

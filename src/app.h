@@ -10,6 +10,14 @@
 #include "texture.h"
 #include "timer.h"
 
+//struct SwapchainResources
+//{
+//	VkSwapchainKHR				mSwapchain;
+//	std::vector<VkImage>		mSwapchainImages;
+//	std::vector<VkImageView>	mSwapchainImageViews;
+//	VkFormat					mSwapchainImageFormat;
+//	VkExtent2D					mSwapchainExtent;
+//};
 
 constexpr unsigned int FRAME_OVERLAP = 2;
 struct FrameResources {
@@ -21,16 +29,18 @@ struct FrameResources {
 
 	VkCommandPool	mCommandPool;
 	VkCommandBuffer mMainCommandBuffer;
+
+	// Per-frame shader resources.
+	VkDescriptorSet			mFrameDataDescriptorSet;
+	scvk::Buffer			mFrameDataBuffer;
 };
 
-//struct SwapchainResources
-//{
-//	VkSwapchainKHR				mSwapchain;
-//	std::vector<VkImage>		mSwapchainImages;
-//	std::vector<VkImageView>	mSwapchainImageViews;
-//	VkFormat					mSwapchainImageFormat;
-//	VkExtent2D					mSwapchainExtent;
-//};
+struct FrameData
+{
+	glm::mat4 view;
+	glm::mat4 proj;
+	glm::mat4 viewProj;
+};
 
 class VulkanApp {
 public:
@@ -44,7 +54,7 @@ public:
 
 	int					mFrameNumber{ 0 };
 	FrameResources		mFrames[FRAME_OVERLAP];
-	FrameResources& getCurrentFrame() { return mFrames[mFrameNumber % FRAME_OVERLAP]; };
+	FrameResources&		getCurrentFrame() { return mFrames[mFrameNumber % FRAME_OVERLAP]; };
 
 	// Swapchain stuff.
 	VkSwapchainKHR				mSwapchain;
@@ -56,14 +66,9 @@ public:
 	scvk::Image					mDepthImage;
 
 
-	uint32_t					mSwapchainImageIndex;
-
-
 	void init();
 	void run();
 	void cleanup();
-
-	void draw(VkCommandBuffer cmd);
 
 	void immediateSubmit(std::function<void(VkCommandBuffer cmd)>&& function);
 
@@ -72,17 +77,22 @@ public:
 
 	scvk::Texture uploadTexture(const char* path);
 	scvk::Texture mTexture;
-	VkDescriptorSetLayout mImageDescriptorSetLayout;
-	VkDescriptorSet mImageDescriptorSet;
+
+	VkDescriptorSetLayout	mImageDescriptorSetLayout;
+	VkDescriptorSet			mImageDescriptorSet;
+
+	VkDescriptorPool		mGlobalDescriptorPool;
+	VkDescriptorSetLayout	mFrameDataDescriptorSetLayout;
 
 
 private:
 
+	void initGlfw();
 	void initContext(bool validation);
 	void initSwapchain();
 	void initFrameResources();
 	void initGlobalResources();
-	void initDescriptors();
+	void initGlobalDescriptors();
 
 
 	void initMeshPipeline();
@@ -118,8 +128,8 @@ private:
 	//-----------------------------------------------
 	VkShaderModule		mVertexShader;
 	VkShaderModule		mFragmentShader;
-	VkPipelineLayout	mMeshPipelineLayout;
 	VkPipeline			mMeshPipeline;
+	VkPipelineLayout	mMeshPipelineLayout;
 	
 	//-----------------------------------------------
 	struct DeletionQueue

@@ -13,6 +13,6 @@ namespace scvk
 		uint32_t	mMipLevels;
 	};
 
-	void destroyTexture(VkDevice device, const Texture& texture);
+	void destroyTexture(VkDevice device, VmaAllocator allocator, const Texture& texture);
 
 }

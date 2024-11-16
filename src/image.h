@@ -7,12 +7,12 @@ namespace scvk
 	struct Image
 	{
 		VkImage         mImage;
-		VkImageView		mImageView;
+		VkImageView		mView;
 		VmaAllocation   mAllocation;
 		VkExtent3D		mExtents;
 		VkFormat		mFormat;
 	};
 
-	void destroyImage(VkDevice device, const Image& image);
+	void destroyImage(VkDevice device, VmaAllocator allocator, Image& image);
 
 }

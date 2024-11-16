@@ -2,9 +2,9 @@
 
 namespace scvk
 {
-	void destroyImage(VkDevice device, const Image& image)
+	void destroyImage(VkDevice device, VmaAllocator allocator, Image& image)
 	{
-		vkDestroyImage(device, image.mImage, nullptr);
-		vkDestroyImageView(device, image.mImageView, nullptr);
+		vkDestroyImageView(device, image.mView, nullptr);
+		vmaDestroyImage(allocator, image.mImage, image.mAllocation);
 	}
 }

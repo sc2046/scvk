@@ -10,6 +10,7 @@ namespace scvk
         VkBuffer			mBuffer;
         VmaAllocation		mAllocation;
 		VmaAllocationInfo	mAllocInfo;
+		uint32_t			mSizeBytes;
     };
 
     //Buffer createBuffer(uint32_t byteSize, VkBufferUsageFlags flags)
@@ -51,7 +52,7 @@ namespace scvk
 			.sharingMode	= VK_SHARING_MODE_EXCLUSIVE
 		};
 		const VmaAllocationCreateInfo allocCreateInfo{
-			.flags			= VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
+			.flags			= VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
 			.usage			= VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
 			.requiredFlags	= alloc_flags | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 		};
