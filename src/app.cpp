@@ -42,17 +42,13 @@ void VulkanApp::init()
     initMeshPipeline();
 
 
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
-    //loadMeshFromfile("../../assets/sponza.obj", vertices, indices);
-    loadMeshFromfile("../../assets/monkey_smooth.obj", vertices, indices);
+    loadGltfFromFile(this, "../../assets/sponza/sponza.gltf", mMesh);
+    mMesh.mBuffers = uploadMeshData(mMesh.mIndices, mMesh.mVertices);
 
-    mesh        = uploadMesh(indices, vertices);
-    
     //delete the mesh data on engine shutdown
     mDeletionQueue.push_function([&]() {
-        vmaDestroyBuffer(mVmaAllocator, mesh.mVertexBuffer.mBuffer, mesh.mVertexBuffer.mAllocation);
-        vmaDestroyBuffer(mVmaAllocator, mesh.mIndexBuffer.mBuffer, mesh.mIndexBuffer.mAllocation);
+        vmaDestroyBuffer(mVmaAllocator, mMesh.mBuffers.mVertexBuffer.mBuffer, mMesh.mBuffers.mVertexBuffer.mAllocation);
+        vmaDestroyBuffer(mVmaAllocator, mMesh.mBuffers.mIndexBuffer.mBuffer, mMesh.mBuffers.mIndexBuffer.mAllocation);
         });
 
     mTexture = uploadTexture("../../assets/statue.jpg");
@@ -297,20 +293,19 @@ void VulkanApp::initGlobalDescriptors()
 
 
 
-    // create a descriptor pool that will hold 10 sets with 1 image each
+    // create a descriptor pool that will hold a large number of sets sets with 1 image each
     std::vector<DescriptorAllocator::PoolSizeRatio> sizes =
     { 
         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}
     };
-    mGlobalDescriptorAllocator.initPool(mDevice, 10, sizes);
+    mGlobalDescriptorAllocator.initPool(mDevice, 4000, sizes);
     mDeletionQueue.push_function([&]() {mGlobalDescriptorAllocator.destroyPool(mDevice);});
-
 
     // Build the descriptor layout.
     builder.clear();
     builder.addBinding(0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    mImageDescriptorSetLayout = builder.build(mDevice, VK_SHADER_STAGE_FRAGMENT_BIT);
-    mDeletionQueue.push_function([&]() {vkDestroyDescriptorSetLayout(mDevice, mImageDescriptorSetLayout, nullptr);});
+    mMeshDescriptorSetLayout = builder.build(mDevice, VK_SHADER_STAGE_FRAGMENT_BIT);
+    mDeletionQueue.push_function([&]() {vkDestroyDescriptorSetLayout(mDevice, mMeshDescriptorSetLayout, nullptr);});
 
 }
 
@@ -338,7 +333,7 @@ void VulkanApp::initMeshPipeline()
     shaders[1].pName = "main";
 
     // The pipeline layout defines an interface for shader resources used by the pipeline.
-    const std::vector<VkDescriptorSetLayout> descriptorSetLayouts = { mFrameDataDescriptorSetLayout, mImageDescriptorSetLayout };
+    const std::vector<VkDescriptorSetLayout> descriptorSetLayouts = { mFrameDataDescriptorSetLayout, mMeshDescriptorSetLayout };
     const VkPushConstantRange bufferRange = { .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(GPUDrawPushConstants) };
     const VkPipelineLayoutCreateInfo pipeline_layout_info = { 
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -460,28 +455,27 @@ void VulkanApp::initMeshPipeline()
 void VulkanApp::run()
 {
 
-    //TODO: Move into main loop (requires reading into dynamic descriptor pools.)
-
-
-    // Allocate a descriptor set for the texture.
-    mImageDescriptorSet = mGlobalDescriptorAllocator.allocate(mDevice, mImageDescriptorSetLayout);
-    // Bind the descriptor set to the image resource.
-    const VkDescriptorImageInfo textureDescriptor = {
-        .sampler = mTexture.mSampler,
-        .imageView = mTexture.mImage.mView,
-        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-    };
-    const VkWriteDescriptorSet imageWrite = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = mImageDescriptorSet,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 1, // Remember that a single descriptor can refer to an array of resources.
-        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .pImageInfo = &textureDescriptor
-    };
-    vkUpdateDescriptorSets(mDevice, 1, &imageWrite, 0, nullptr);
-
+    //Allocate a descriptor set for each primitive.
+    for (int i = 0; i < mMesh.mPrimitives.size(); ++i)
+    {
+        mMeshDescriptorSets.emplace_back(mGlobalDescriptorAllocator.allocate(mDevice, mMeshDescriptorSetLayout));
+        const auto tex = mMesh.mPrimitives[i].textureID != UINT32_MAX ? mMesh.mPrimitives[i].textureID : 0;
+        const VkDescriptorImageInfo textureDescriptor = {
+            .sampler = mTexture.mSampler,
+            .imageView = mMesh.mTextures[tex].mImage.mView,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        };
+        const VkWriteDescriptorSet imageWrite = {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = mMeshDescriptorSets[i],
+            .dstBinding = 0,
+            .dstArrayElement = 0,
+            .descriptorCount = 1, // Remember that a single descriptor can refer to an array of resources.
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .pImageInfo = &textureDescriptor
+        };
+        vkUpdateDescriptorSets(mDevice, 1, &imageWrite, 0, nullptr);
+    }
 
 
 
@@ -618,22 +612,31 @@ void VulkanApp::run()
 
             // Bind mesh pipeline
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mMeshPipeline);
+
             // Bind descriptors
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mMeshPipelineLayout, 0, 1, &getCurrentFrame().mFrameDataDescriptorSet, 0, nullptr); 
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mMeshPipelineLayout, 1, 1, &mImageDescriptorSet, 0, nullptr);
-
-            // Push push constants.
-            const glm::mat4 model = glm::mat4(1.f);
-            GPUDrawPushConstants push_constants = {
-                .mWorldMatrix = glm::scale(model, glm::vec3(0.1f)),
-                .mVertexBufferAddress = mesh.mVertexBufferAddress
-            };
-            vkCmdPushConstants(cmd, mMeshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
+            //vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mMeshPipelineLayout, 1, 1, &mMeshDescriptorSets[0], 0, nullptr);
 
             // Bind mesh index buffer.
-            vkCmdBindIndexBuffer(cmd, mesh.mIndexBuffer.mBuffer, 0, VK_INDEX_TYPE_UINT32);
-            // Draw mesh.
-            vkCmdDrawIndexed(cmd, mesh.mIndexBuffer.mSizeBytes / sizeof(uint32_t), 1, 0, 0, 0);
+            vkCmdBindIndexBuffer(cmd, mMesh.mBuffers.mIndexBuffer.mBuffer, 0, VK_INDEX_TYPE_UINT32);
+            
+            for (int i =0; i <mMesh.mPrimitives.size(); ++i)
+            {
+                auto& prim = mMesh.mPrimitives[i];
+
+                // Push push constants.
+                const glm::mat4 model = glm::mat4(1.f);
+                GPUDrawPushConstants push_constants = {
+                    .mWorldMatrix = glm::scale(model, glm::vec3(0.1f)),
+                    .mVertexBufferAddress = mMesh.mBuffers.mVertexBufferAddress
+                };
+                vkCmdPushConstants(cmd, mMeshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
+                // Bind the descriptor set for the primitive's resources.
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mMeshPipelineLayout, 1, 1, &mMeshDescriptorSets[i], 0, nullptr);
+               
+                // Draw primitive.
+                vkCmdDrawIndexed(cmd, prim.indexCount, 1, prim.firstIndex, 0, 0);
+            }
             // End render pass.
             vkCmdEndRendering(cmd);
 
@@ -840,7 +843,7 @@ void VulkanApp::createSwapchain(uint32_t width, uint32_t height)
 
 // Uploads the vertices and indices of a mesh to the GPU
 // and returns the associated GPU buffers needed for rendering.
-GPUMeshBuffers VulkanApp::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices)
+GPUMeshBuffers VulkanApp::uploadMeshData(std::span<uint32_t> indices, std::span<Vertex> vertices)
 {
     GPUMeshBuffers newSurface;
     newSurface.mVertexBuffer.mSizeBytes = vertices.size() * sizeof(Vertex);
@@ -912,16 +915,20 @@ scvk::Texture VulkanApp::uploadTexture(const char* path)
 {
     int width, height;
     unsigned char* imageData = stbi_load(path, &width, &height, nullptr, 4);
-    assert(imageData);
+    return uploadTexture(imageData, width, height);
+}
+
+scvk::Texture VulkanApp::uploadTexture(unsigned char* imageData, int width, int height)
+{
 
     scvk::Image image;
     image.mFormat = VK_FORMAT_R8G8B8A8_SRGB;
     image.mExtents = { static_cast<uint32_t>(width),  static_cast<uint32_t>(height), 1 };
 
     VkImageCreateInfo imageInfo = { .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
-    imageInfo.imageType  = VK_IMAGE_TYPE_2D;
-    imageInfo.extent     = image.mExtents;
-    imageInfo.format     = image.mFormat;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent = image.mExtents;
+    imageInfo.format = image.mFormat;
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -929,7 +936,7 @@ scvk::Texture VulkanApp::uploadTexture(const char* path)
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    
+
     VmaAllocationCreateInfo imageCreateInfo = {};
     imageCreateInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     imageCreateInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -954,7 +961,7 @@ scvk::Texture VulkanApp::uploadTexture(const char* path)
 
     // Create staging buffer and copy image data to it.
     scvk::Buffer staging = scvk::createHostVisibleStagingBuffer(mVmaAllocator, image.mExtents.width * image.mExtents.height * 4);
-    
+
     void* data;
     vmaMapMemory(mVmaAllocator, staging.mAllocation, (void**)&data);
     memcpy(data, imageData, image.mExtents.width * image.mExtents.height * 4);
@@ -966,55 +973,55 @@ scvk::Texture VulkanApp::uploadTexture(const char* path)
         const VkImageSubresourceRange range{ VK_IMAGE_ASPECT_COLOR_BIT,
         0,1,
         0,1 };
-        
-        VkImageMemoryBarrier2 preCopyMemoryBarrier = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
-        preCopyMemoryBarrier.image = image.mImage;
-        preCopyMemoryBarrier.srcAccessMask = 0;
-        preCopyMemoryBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-        preCopyMemoryBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT_KHR;
-        preCopyMemoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
-        preCopyMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        preCopyMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        preCopyMemoryBarrier.subresourceRange = range;
 
-        VkDependencyInfo dep = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
-        dep.imageMemoryBarrierCount = 1;
-        dep.pImageMemoryBarriers = &preCopyMemoryBarrier;
+    VkImageMemoryBarrier2 preCopyMemoryBarrier = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+    preCopyMemoryBarrier.image = image.mImage;
+    preCopyMemoryBarrier.srcAccessMask = 0;
+    preCopyMemoryBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+    preCopyMemoryBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT_KHR;
+    preCopyMemoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+    preCopyMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    preCopyMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    preCopyMemoryBarrier.subresourceRange = range;
 
-        vkCmdPipelineBarrier2(cmd, &dep);
+    VkDependencyInfo dep = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+    dep.imageMemoryBarrierCount = 1;
+    dep.pImageMemoryBarriers = &preCopyMemoryBarrier;
 
-        // Copy data from staging buffer to image.
-        VkBufferImageCopy region{};
-        region.bufferOffset = 0;
-        region.bufferRowLength = 0;
-        region.bufferImageHeight = 0;
-        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        region.imageSubresource.mipLevel = 0;
-        region.imageSubresource.baseArrayLayer = 0;
-        region.imageSubresource.layerCount = 1;
-        region.imageOffset = { 0, 0, 0 };
-        region.imageExtent = { image.mExtents.width, image.mExtents.height, 1 };
+    vkCmdPipelineBarrier2(cmd, &dep);
+
+    // Copy data from staging buffer to image.
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = { 0, 0, 0 };
+    region.imageExtent = { image.mExtents.width, image.mExtents.height, 1 };
 
 
-        vkCmdCopyBufferToImage(cmd, staging.mBuffer, image.mImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    vkCmdCopyBufferToImage(cmd, staging.mBuffer, image.mImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-        VkImageMemoryBarrier2 postCopyMemoryBarrier = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
-        postCopyMemoryBarrier.image = image.mImage;
-        postCopyMemoryBarrier.srcStageMask  = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-        postCopyMemoryBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        postCopyMemoryBarrier.dstStageMask  = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
-        postCopyMemoryBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT_KHR;
-        postCopyMemoryBarrier.oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        postCopyMemoryBarrier.newLayout     = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        postCopyMemoryBarrier.subresourceRange = range;
+    VkImageMemoryBarrier2 postCopyMemoryBarrier = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+    postCopyMemoryBarrier.image = image.mImage;
+    postCopyMemoryBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    postCopyMemoryBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    postCopyMemoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+    postCopyMemoryBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT_KHR;
+    postCopyMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    postCopyMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    postCopyMemoryBarrier.subresourceRange = range;
 
-        VkDependencyInfo depPost = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
-        depPost.imageMemoryBarrierCount = 1;
-        depPost.pImageMemoryBarriers = &postCopyMemoryBarrier;
+    VkDependencyInfo depPost = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+    depPost.imageMemoryBarrierCount = 1;
+    depPost.pImageMemoryBarriers = &postCopyMemoryBarrier;
 
-        vkCmdPipelineBarrier2(cmd, &depPost);
+    vkCmdPipelineBarrier2(cmd, &depPost);
 
-    });
+        });
 
     vmaDestroyBuffer(mVmaAllocator, staging.mBuffer, staging.mAllocation);
 
@@ -1047,5 +1054,4 @@ scvk::Texture VulkanApp::uploadTexture(const char* path)
     texture.mMipLevels = 1;
 
     return texture;
-
 }

@@ -24,6 +24,7 @@ find_package(Vulkan REQUIRED)
 
 include_directories(
     "${PROJECT_SOURCE_DIR}/include"
+    "${PROJECT_SOURCE_DIR}/external/fastgltf/include"
     "${PROJECT_SOURCE_DIR}/external/glfw/include"
     "${PROJECT_SOURCE_DIR}/external/fmt/include"
     "${PROJECT_SOURCE_DIR}/external/glm/glm"
@@ -36,6 +37,7 @@ include_directories(
 
 
 add_subdirectory("external/glfw")  
+add_subdirectory("external/fastgltf")
 add_subdirectory("external/fmt")  
 add_subdirectory("external/VulkanMemoryAllocator")
 add_subdirectory("external/volk")  

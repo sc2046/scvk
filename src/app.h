@@ -66,23 +66,28 @@ public:
 	scvk::Image					mDepthImage;
 
 
+	VkDescriptorPool		mGlobalDescriptorPool;
+	VkDescriptorSetLayout	mFrameDataDescriptorSetLayout;
+
+
+
 	void init();
 	void run();
 	void cleanup();
 
 	void immediateSubmit(std::function<void(VkCommandBuffer cmd)>&& function);
 
-	GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
-	GPUMeshBuffers mesh;
+
+	GPUMeshBuffers uploadMeshData(std::span<uint32_t> indices, std::span<Vertex> vertices);
+	LoadedMesh mMesh;
 
 	scvk::Texture uploadTexture(const char* path);
+	scvk::Texture uploadTexture(unsigned char* data, int width, int height);
 	scvk::Texture mTexture;
 
-	VkDescriptorSetLayout	mImageDescriptorSetLayout;
-	VkDescriptorSet			mImageDescriptorSet;
+	VkDescriptorSetLayout			mMeshDescriptorSetLayout;
+	std::vector<VkDescriptorSet>	mMeshDescriptorSets;
 
-	VkDescriptorPool		mGlobalDescriptorPool;
-	VkDescriptorSetLayout	mFrameDataDescriptorSetLayout;
 
 
 private:

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "buffer.h"
+#include "texture.h"
 #include "vk_types.h"
 
 
@@ -15,7 +16,6 @@ struct Vertex {
 
 // holds the resources needed for a mesh
 struct GPUMeshBuffers {
-
 	scvk::Buffer	mIndexBuffer;
 	scvk::Buffer	mVertexBuffer;
 	VkDeviceAddress mVertexBufferAddress;
@@ -28,10 +28,26 @@ struct GPUDrawPushConstants {
 };
 
 
+struct Primitive
+{
+	uint32_t indexCount;
+	uint32_t firstIndex;
 
+	uint32_t textureID;
+};
 
 struct LoadedMesh
 {
+	std::vector<Primitive> mPrimitives;
 
+
+	// CPU data.
+	std::vector<Vertex>			mVertices;
+	std::vector<uint32_t>		mIndices;
+
+
+	//std::vector<std::string>	mTexturePaths;
+	// GPU data.
 	GPUMeshBuffers mBuffers;
+	std::vector<scvk::Texture>	mTextures;
 };
