@@ -39,6 +39,7 @@ include_directories(
 add_subdirectory("external/glfw")  
 add_subdirectory("external/fastgltf")
 add_subdirectory("external/fmt")  
+add_subdirectory("external/tracy")  
 add_subdirectory("external/VulkanMemoryAllocator")
 add_subdirectory("external/volk")  
 add_subdirectory("external/vk-bootstrap")

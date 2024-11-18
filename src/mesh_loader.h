@@ -85,7 +85,6 @@ inline LoadedMesh processGltfMesh(const fastgltf::Asset& asset, const fastgltf::
 		// Process indices for the primitive.
 		const auto& indicesAccessor = asset.accessors[gltfPrimitive.indicesAccessor.value()];
 		indices.reserve(indices.size() + indicesAccessor.count);
-
 		fastgltf::iterateAccessor<std::uint32_t>(asset, indicesAccessor,
 			[&](std::uint32_t index) {
 				indices.push_back(index + initial_vertex);
@@ -142,11 +141,6 @@ inline LoadedMesh processGltfMesh(const fastgltf::Asset& asset, const fastgltf::
 				});
 		}
 
-		for (auto& vtx : vertices) {
-			vtx.color = glm::vec4(vtx.normal, 1.f);
-		}
-
-
 		primitives.push_back(std::move(prim));
 
     }
@@ -156,8 +150,6 @@ inline LoadedMesh processGltfMesh(const fastgltf::Asset& asset, const fastgltf::
         .mPrimitives = std::move(primitives),
 		.mVertices = std::move(vertices),
 		.mIndices = std::move(indices),
-		//.mTextures = loadTexturesFromGLTFAsset()
-
     };
 
 	return mesh;

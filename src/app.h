@@ -98,10 +98,10 @@ private:
 	void initFrameResources();
 	void initGlobalResources();
 	void initGlobalDescriptors();
-
-
 	void initMeshPipeline();
 	
+
+	void initTracy();
 	
 	void createSwapchain(uint32_t width, uint32_t height);
 	void destroySwapchain();

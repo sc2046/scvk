@@ -25,6 +25,11 @@
 #include <stb_image.h>
 
 
+#include <tracy/tracy.hpp>
+#include <tracy/TracyVulkan.hpp>
+
+
+
 void VulkanApp::init()
 {
     #ifdef NDEBUG
@@ -41,6 +46,8 @@ void VulkanApp::init()
     initGlobalDescriptors();
     initMeshPipeline();
 
+
+    initTracy();
 
     loadGltfFromFile(this, "../../assets/sponza/sponza.gltf", mMesh);
     mMesh.mBuffers = uploadMeshData(mMesh.mIndices, mMesh.mVertices);
@@ -191,6 +198,28 @@ void VulkanApp::initSwapchain()
     createSwapchain(mWindowExtents.width, mWindowExtents.height);
 }
 
+void VulkanApp::initTracy()
+{
+    //VkCommandBufferAllocateInfo info = {
+    //    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+    //    .commandBufferCount  = 1,
+    //    .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+    //    .commandPool = 
+
+    //}
+
+    //#if defined(VK_EXT_calibrated_timestamps)
+    //    TracyVkCtx tracyCtx_ = TracyVkContextCalibrated(
+    //        mPhysicalDevice, mDebugMessenger, mGraphicsQueueFamily,
+    //        commandBuffer,
+    //        vkGetPhysicalDeviceCalibrateableTimeDomainsKHR,
+    //        vkGetCalibratedTimestampsKHR);
+    //#else
+    //    TracyVkCtx tracyCtx_ = TracyVkContext(
+    //        physicalDevice, device, graphicsQueueIndex,
+    //        commandBuffer);
+    //#endif
+}
 
 void VulkanApp::initFrameResources()
 {
@@ -477,11 +506,27 @@ void VulkanApp::run()
         vkUpdateDescriptorSets(mDevice, 1, &imageWrite, 0, nullptr);
     }
 
-
-
+    static auto lastFrameTime = std::chrono::high_resolution_clock::now();
+    static auto elapsed = 0.f;
+    static auto elapsedFrames = 0u;
     // Main loop
     while (!glfwWindowShouldClose(mWindow)) {
 
+        // Record the current frame's start time
+        const auto currentFrameTime = std::chrono::high_resolution_clock::now();
+        // Compute delta time in seconds
+        const auto deltaTime = std::chrono::duration<float, std::ratio<1>>(currentFrameTime - lastFrameTime).count();
+        elapsed += deltaTime;
+        ++elapsedFrames;
+        if (elapsed >= 1.0f) {
+            auto fps = elapsedFrames/ elapsed;
+            // Reset counters
+            elapsedFrames = 0;
+            elapsed = 0.0f;
+            glfwSetWindowTitle(mWindow, std::to_string(fps).c_str());
+        }
+        
+        lastFrameTime = currentFrameTime;
 
         static glm::vec3 camPos     = glm::vec3(0.f, 0.f, 2.f);
         static glm::vec3 forward    = glm::vec3(0.f,0.f,-1.f);
@@ -506,9 +551,6 @@ void VulkanApp::run()
             forward = glm::rotate(glm::mat4(1.f), glm::radians(1.f), { 0.f,1.f,0.f }) * glm::vec4(forward, 0.f);
         if (glfwGetKey(mWindow, GLFW_KEY_E) == GLFW_PRESS)
             forward = glm::rotate(glm::mat4(1.f), glm::radians(-1.f), { 0.f,1.f,0.f }) * glm::vec4(forward, 0.f);
-
-
-        glfwPollEvents();
     
         // Wait for the other frame to finish by waiting on it's fence.
         VK_CHECK(vkWaitForFences(mDevice, 1, &getCurrentFrame().mRenderFence, VK_TRUE, UINT64_MAX));
@@ -702,6 +744,8 @@ void VulkanApp::run()
             .pImageIndices = &swapchainImageIndex
         };
         VK_CHECK(vkQueuePresentKHR(mGraphicsQueue, &info));
+
+        glfwPollEvents();
         // Set the index of the next frame to render to
         ++mFrameNumber;
     }
@@ -780,7 +824,7 @@ void VulkanApp::createSwapchain(uint32_t width, uint32_t height)
 
     vkb::Swapchain vkbSwapchain = swapchainBuilder
         .set_desired_format(VkSurfaceFormatKHR{ .format = mSwapchainImageFormat, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR })
-        .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR) // TODO: read.
+        .set_desired_present_mode(/*VK_PRESENT_MODE_IMMEDIATE_KHR*/VK_PRESENT_MODE_FIFO_KHR) // TODO: read.
         .set_desired_extent(width, height) // Set resolution of swapchain images (should be window resolution).
         .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
         .build()
@@ -839,10 +883,11 @@ void VulkanApp::createSwapchain(uint32_t width, uint32_t height)
 // TODO: ()
 /// Note that this pattern is not very efficient, as we are waiting for the GPU command to fully execute before continuing with our CPU side logic.
 /// This is something people generally put on a background thread, whose sole job is to execute uploads like this one, and deleting/reusing the staging buffers.
-///
+/// TODO: Profile.
 
 // Uploads the vertices and indices of a mesh to the GPU
 // and returns the associated GPU buffers needed for rendering.
+
 GPUMeshBuffers VulkanApp::uploadMeshData(std::span<uint32_t> indices, std::span<Vertex> vertices)
 {
     GPUMeshBuffers newSurface;
